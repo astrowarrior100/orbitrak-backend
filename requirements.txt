@@ -9,3 +9,4 @@ geopy
 xgboost
 python-multipart
 python-dotenv
+scikit-learn
