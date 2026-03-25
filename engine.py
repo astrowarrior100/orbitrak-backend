@@ -1,4 +1,5 @@
 import os
+print("FILES IN WORKING DIR:", os.listdir("."))
 import requests
 import numpy as np
 from dataclasses import dataclass
@@ -18,9 +19,9 @@ import xgboost as xgb
 SPACE_TRACK_USER = os.getenv("o_USERNAME")
 SPACE_TRACK_PASS = os.getenv("o_PASSWORD")
 
-print("ENGINE IMPORTED")
+""" print("ENGINE IMPORTED")
 print("USER:", SPACE_TRACK_USER)
-print("PASS:", SPACE_TRACK_PASS)
+print("PASS:", SPACE_TRACK_PASS) """
 
 
 if SPACE_TRACK_USER is None or SPACE_TRACK_PASS is None:
@@ -715,8 +716,13 @@ class DangerFeatures:
 
 class DangerEngine:
     def __init__(self, model_path="danger_xgb.json"):
+
+        try:
         self.model = xgb.XGBRegressor()
         self.model.load_model(model_path)
+        except Exception as e:
+        print("WARNING: Failed to load model:", model_path, e)
+        self.model = None
         
     def estimate_danger(self, feats: DangerFeatures) -> float:
         X = np.array([[
