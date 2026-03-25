@@ -718,11 +718,11 @@ class DangerEngine:
     def __init__(self, model_path="danger_xgb.json"):
 
         try:
-        self.model = xgb.XGBRegressor()
-        self.model.load_model(model_path)
+            self.model = xgb.XGBRegressor()
+            self.model.load_model(model_path)
         except Exception as e:
-        print("WARNING: Failed to load model:", model_path, e)
-        self.model = None
+            print("WARNING: Failed to load model:", model_path, e)
+            self.model = None
         
     def estimate_danger(self, feats: DangerFeatures) -> float:
         X = np.array([[
