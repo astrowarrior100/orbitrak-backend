@@ -10,6 +10,9 @@ import requests
 
 print("LOADED FILE:", os.path.abspath(__file__))
 
+
+app = FastAPI()
+
 origins = [
     "http://127.0.0.1:5500",
     "http://localhost:5500",
@@ -17,7 +20,6 @@ origins = [
     "https://astrowarrior100.github.io/orbitrak-frontend"
 ]
 
-app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,  # allow all origins (for development)
@@ -29,6 +31,10 @@ app.add_middleware(
 @app.get("/")
 def health_check():
     return {"status": "ok"}
+
+@app.get("/test-cors")
+def test():
+    return {"message": "CORS working"}
 
 
 class ScanRequest(BaseModel):
