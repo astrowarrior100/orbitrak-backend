@@ -45,6 +45,7 @@ class ScanRequest(BaseModel):
 @app.post("/scan")
 def scan_debris(request: ScanRequest):
     # Your engine requires min_alt_km and max_alt_km
+    print ("Scan started")
     min_alt_km = 100
     max_alt_km = 50000
 
@@ -56,6 +57,7 @@ def scan_debris(request: ScanRequest):
         request.radius_km
     )
 
+    print ("scan completed")
     return {"results": results}
 
 
