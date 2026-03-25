@@ -18,8 +18,13 @@ import xgboost as xgb
 SPACE_TRACK_USER = os.getenv("o_USERNAME")
 SPACE_TRACK_PASS = os.getenv("o_PASSWORD")
 
+print("ENGINE IMPORTED")
+print("USER:", SPACE_TRACK_USER)
+print("PASS:", SPACE_TRACK_PASS)
+
+
 if SPACE_TRACK_USER is None or SPACE_TRACK_PASS is None:
-    raise RuntimeError("Space-Track API credentials not set in environment variables.")
+    print("WARNING: Space-Track credentials missing. Running in offline mode.")
 
 
 LOGIN_URL = "https://www.space-track.org/ajaxauth/login"
