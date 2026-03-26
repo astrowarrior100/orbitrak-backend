@@ -1275,8 +1275,13 @@ def find_debris(lat, lon, min_alt_km, max_alt_km, radius_km):
             continue
 
         # SATCAT disabled (memory optimization)
-        rcs = "Unknown"
-        country = "Unknown"
+        # rcs = "Unknown"
+        # country = "Unknown"
+
+        satcat_min = build_satcat_minimal()
+        satcat_info = satcat_min.get(norad, {})
+        rcs = satcat_info.get("rcs_size", "Unknown")
+        country = satcat_info.get("country", "Unknown")
 
         # Parent scanning disabled
         parent_types = []
