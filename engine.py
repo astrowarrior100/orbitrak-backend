@@ -1043,6 +1043,7 @@ def compute_danger_score(obj, collision_risk: Optional[float] = None) -> float:
     mass_info = obj.get("mass_estimate", {})
     material_info = obj.get("material_estimate", {})
 
+    # --- Sanitize size ---
     try:
         min_size_cm = float(size_info.get("approx_min_size_cm", 0.0))
         max_size_cm = float(size_info.get("approx_max_size_cm", 0.0))
@@ -1050,19 +1051,42 @@ def compute_danger_score(obj, collision_risk: Optional[float] = None) -> float:
         min_size_cm = max_size_cm = 0.0
 
     char_size_cm = max(min_size_cm, max_size_cm)
+
+    # --- Sanitize mass ---
     mass_kg = mass_info.get("mass_kg")
+    if mass_kg is None:
+        mass_kg = 0.0
+
     material_str = material_info.get("material")
 
+    # --- Sanitize orbital parameters ---
     ecc = obj.get("eccentricity")
+    if ecc is None:
+        ecc = 0.0
+
     perigee = obj.get("perigee_km")
+    if perigee is None:
+        perigee = obj.get("altitude_km", 0.0)
+
     alt = obj.get("altitude_km")
-    orbit_zone = get_orbit_zone(alt) if alt is not None else None
+    if alt is None:
+        alt = 0.0
+
+    orbit_zone = get_orbit_zone(alt)
+
+    # --- Sanitize collision risk ---
+    if collision_risk is None:
+        collision_risk = compute_collision_risk(obj)
+    if collision_risk is None:
+        collision_risk = 0.0
+
+    # ============================
+    # ORIGINAL LOGIC BELOW
+    # ============================
 
     factors = {}
     weights = {}
 
-    if collision_risk is None:
-        collision_risk = compute_collision_risk(obj)
     coll_norm = collision_risk / 100.0
     factors["collision"] = coll_norm
     weights["collision"] = 2.0
@@ -1114,6 +1138,9 @@ def compute_danger_score(obj, collision_risk: Optional[float] = None) -> float:
         w = weights.get(k, 1.0)
         num += w * f
         den += w
+
+    if den == 0:
+        return 0.0
 
     score_0_1 = num / den
     return max(0.0, min(10.0, score_0_1 * 10.0))
@@ -1384,8 +1411,19 @@ def find_debris(lat, lon, min_alt_km, max_alt_km, radius_km):
             coll_risk = 0.0
 
         # Danger score
+        # Danger score
         try:
-            analytic_danger = compute_danger_score(obj, coll_risk)
+            # Sanitize None values to safe defaults
+            safe_obj = obj.copy()
+            for key in ["velocity_kms", "eccentricity", "inclination_deg",
+                        "perigee_km", "apogee_km", "period_min"]:
+                if safe_obj.get(key) is None:
+                    safe_obj[key] = 0.0
+
+            if coll_risk is None:
+                coll_risk = 0.0
+
+            analytic_danger = compute_danger_score(safe_obj, coll_risk)
 
             danger_feats = DangerFeatures(
                 size_min_cm=min_size_val,
