@@ -1,5 +1,6 @@
 import os
 print("FILES IN WORKING DIR:", os.listdir("."))
+print ("Engine Start")
 import requests
 import numpy as np
 from dataclasses import dataclass
@@ -48,8 +49,18 @@ SATCAT_DATA = None
 def get_session():
     global SESSION
     if SESSION is None:
-        SESSION = requests.Session()
-        SESSION.post(LOGIN_URL, data={"identity": SPACE_TRACK_USER, "password": SPACE_TRACK_PASS})
+        try:
+            SESSION = requests.Session()
+            if SPACE_TRACK_USER and SPACE_TRACK_PASS:
+                SESSION.post(LOGIN_URL, data={
+                    "identity": SPACE_TRACK_USER,
+                    "password": SPACE_TRACK_PASS
+                })
+            else:
+                print("Skipping Space-Track login (no credentials).")
+        except Exception as e:
+            print("ERROR: Failed to initialize Space-Track session:", e)
+            SESSION = requests.Session()  # fallback
     return SESSION
 
 
@@ -81,12 +92,13 @@ def get_session():
 # =============================
 
 def _load_satcat_cache():
-    if not os.path.exists(SATCAT_CACHE_PATH):
-        return None
     try:
+        if not os.path.exists(SATCAT_CACHE_PATH):
+            return None
         with open(SATCAT_CACHE_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
+    except Exception as e:
+        print("ERROR loading SATCAT cache:", e)
         return None
 
 def _save_satcat_cache(data):
@@ -109,12 +121,13 @@ def _satcat_cache_is_fresh(cache):
     return (datetime.now(timezone.utc) - t) < timedelta(hours=24)
 
 def _load_gp_cache():
-    if not os.path.exists(GP_CACHE_PATH):
-        return None
     try:
+        if not os.path.exists(GP_CACHE_PATH):
+            return None
         with open(GP_CACHE_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
+    except Exception as e:
+        print("ERROR loading GP cache:", e)
         return None
 
 def _save_gp_cache(data):
@@ -247,7 +260,11 @@ def build_satellites(json_data):
             continue
 
 
-        sat = EarthSatellite(line1, line2, name)
+        try:
+            sat = EarthSatellite(line1, line2, name)
+        except Exception as e:
+            print("ERROR creating EarthSatellite:", e)
+        continue
 
         satellites.append({
             "sat": sat,
@@ -321,11 +338,15 @@ class SizeEngineV3:
         self.model = None
         self.debug = debug
 
-        if os.path.exists(model_path):
-            self.model = xgb.XGBRegressor()
-            self.model.load_model(model_path)
-        else:
-            print(f"SizeEngineV3 WARNING: No ML model at {model_path}. Using physics-only size estimates.")
+        try:
+            if os.path.exists(model_path):
+                self.model = xgb.XGBRegressor()
+                self.model.load_model(model_path)
+            else:
+                print(f"SizeEngineV3 WARNING: No ML model at {model_path}. Using physics-only size estimates.")
+        except Exception as e:
+            print(f"ERROR: Failed to load size model {model_path}:", e)
+            self.model = None
 
     def _encode_rcs(self, rcs_size: Optional[str]) -> int:
         if not rcs_size:
@@ -506,11 +527,15 @@ class MassEngineV3:
         self.model = None
         self.debug = debug
 
-        if os.path.exists(model_path):
-            self.model = xgb.XGBRegressor()
-            self.model.load_model(model_path)
-        else:
-            print(f"MassEngineV3 WARNING: No ML model at {model_path}. Using physics-only mass estimates.")
+        try:
+            if os.path.exists(model_path):
+                self.model = xgb.XGBRegressor()
+                self.model.load_model(model_path)
+            else:
+                print(f"MassEngineV3 WARNING: No ML model at {model_path}. Using physics-only mass estimates.")
+        except Exception as e:
+            print(f"ERROR: Failed to load mass model {model_path}:", e)
+            self.model = None
 
     def _encode_rcs(self, rcs_size: Optional[str]) -> int:
         if not rcs_size:
@@ -721,7 +746,7 @@ class DangerEngine:
             self.model = xgb.XGBRegressor()
             self.model.load_model(model_path)
         except Exception as e:
-            print("WARNING: Failed to load model:", model_path, e)
+            print("WARNING: Failed to load danger model:", model_path, e)
             self.model = None
         
     def estimate_danger(self, feats: DangerFeatures) -> float:
@@ -1228,83 +1253,135 @@ decay_engine_physics = DecayRateEnginePhysics()
 
 
 def find_debris(lat, lon, min_alt_km, max_alt_km, radius_km):
-    gp_data = fetch_all_gp_objects()
+    # GP DATA
+    try:
+        gp_data = fetch_all_gp_objects()
+    except Exception as e:
+        print("ERROR: fetch_all_gp_objects failed:", e)
+        return []
 
-    gp_payloads = build_satellites(gp_data["payload"])
-    gp_rocket_bodies = build_satellites(gp_data["rocket_body"])
-    gp_debris = build_satellites(gp_data["debris"])
+    # BUILD SATELLITES
+    try:
+        gp_payloads = build_satellites(gp_data["payload"])
+        gp_rocket_bodies = build_satellites(gp_data["rocket_body"])
+        gp_debris = build_satellites(gp_data["debris"])
+    except Exception as e:
+        print("ERROR: build_satellites failed:", e)
+        return []
 
     all_gp_objects = gp_payloads + gp_rocket_bodies + gp_debris
 
-    satcat_min = build_satcat_minimal()
-    ts = load.timescale()
+    # SATCAT
+    try:
+        satcat_min = build_satcat_minimal()
+    except Exception as e:
+        print("ERROR: build_satcat_minimal failed:", e)
+        satcat_min = {}
+
+    # TIMESCALE
+    try:
+        ts = load.timescale()
+    except Exception as e:
+        print("ERROR: Skyfield timescale load failed:", e)
+        return []
 
     results = []
 
     for entry in all_gp_objects:
-        sat = entry["sat"]
-        name = entry["name"]
-        norad = entry["norad_id"]
-        object_id = entry["object_id"]
-        object_type = entry["object_type"]
+        try:
+            sat = entry["sat"]
+            name = entry["name"]
+            norad = entry["norad_id"]
+            object_id = entry["object_id"]
+            object_type = entry["object_type"]
+        except Exception as e:
+            print("ERROR: malformed GP entry:", e)
+            continue
 
         # Only debris
         if object_type != "DEBRIS":
             continue
 
-        geocentric = sat.at(ts.now())
-        subpoint = wgs84.subpoint(geocentric)
-        sat_lat = subpoint.latitude.degrees
-        sat_lon = subpoint.longitude.degrees
-        sat_alt = subpoint.elevation.km
+        # PROPAGATION
+        try:
+            geocentric = sat.at(ts.now())
+            subpoint = wgs84.subpoint(geocentric)
+            sat_lat = subpoint.latitude.degrees
+            sat_lon = subpoint.longitude.degrees
+            sat_alt = subpoint.elevation.km
+        except Exception as e:
+            print(f"ERROR: propagation failed for {name}:", e)
+            continue
 
-        # Skip invalid coordinate cases
         if math.isnan(sat_lat) or math.isnan(sat_lon) or math.isnan(sat_alt):
             continue
 
-        # ⭐ NEW: Altitude filtering
-        if sat_alt < min_alt_km:
-            continue
-        if sat_alt > max_alt_km:
+        # Altitude filtering
+        if sat_alt < min_alt_km or sat_alt > max_alt_km:
             continue
 
-        # Distance filtering
-        dist = geodesic((lat, lon), (sat_lat, sat_lon)).km
+        # DISTANCE
+        try:
+            dist = geodesic((lat, lon), (sat_lat, sat_lon)).km
+        except Exception as e:
+            print(f"ERROR: geodesic failed for {name}:", e)
+            continue
+
         if dist > radius_km:
             continue
 
-        # (Everything below remains unchanged)
-        params = compute_orbital_parameters(sat, ts)
+        # ORBITAL PARAMETERS
+        try:
+            params = compute_orbital_parameters(sat, ts)
+        except Exception as e:
+            print(f"ERROR: compute_orbital_parameters failed for {name}:", e)
+            continue
+
+        # SATCAT INFO
         satcat_info = satcat_min.get(norad, {})
         rcs = satcat_info.get("rcs_size", "Unknown")
         country = satcat_info.get("country", "Unknown")
 
+        # PARENT TYPES
         parent_types = []
-        if object_id:
-            prefix = object_id[:8]
-            for obj in all_gp_objects:
-                if obj["object_id"] and obj["object_id"].startswith(prefix) and obj["object_type"] != "DEBRIS":
-                    parent_types.append(obj["object_type"])
+        try:
+            if object_id:
+                prefix = object_id[:8]
+                for obj in all_gp_objects:
+                    if obj["object_id"] and obj["object_id"].startswith(prefix) and obj["object_type"] != "DEBRIS":
+                        parent_types.append(obj["object_type"])
+        except Exception:
+            pass
 
-        material_ctx = DebrisMaterialContext(
-            object_name=name,
-            parent_object_types=parent_types,
-            rcs_size=rcs
-        )
-        material_info = estimate_debris_material(material_ctx)
+        # MATERIAL
+        try:
+            material_ctx = DebrisMaterialContext(
+                object_name=name,
+                parent_object_types=parent_types,
+                rcs_size=rcs
+            )
+            material_info = estimate_debris_material(material_ctx)
+        except Exception as e:
+            print(f"ERROR: material estimation failed for {name}:", e)
+            material_info = {"material": "Unknown", "confidence": "LOW"}
 
-        size_feats = SizeFeatures(
-            rcs=rcs,
-            object_type=object_type,
-            material=material_info["material"],
-            orbit_zone=get_orbit_zone(sat_alt),
-            ecc=params["eccentricity"],
-            inc_deg=params["inclination_deg"],
-            perigee_km=params["perigee_km"],
-            apogee_km=params["apogee_km"],
-            period_min=params["period_min"] if params["period_min"] else 0.0
-        )
-        size_ml = size_engine.estimate_size(size_feats)
+        # SIZE
+        try:
+            size_feats = SizeFeatures(
+                rcs=rcs,
+                object_type=object_type,
+                material=material_info["material"],
+                orbit_zone=get_orbit_zone(sat_alt),
+                ecc=params["eccentricity"],
+                inc_deg=params["inclination_deg"],
+                perigee_km=params["perigee_km"],
+                apogee_km=params["apogee_km"],
+                period_min=params["period_min"] if params["period_min"] else 0.0
+            )
+            size_ml = size_engine.estimate_size(size_feats)
+        except Exception as e:
+            print(f"ERROR: size estimation failed for {name}:", e)
+            continue
 
         size_info = {
             "rcs_size": rcs,
@@ -1313,97 +1390,122 @@ def find_debris(lat, lon, min_alt_km, max_alt_km, radius_km):
             "note": size_ml["note"]
         }
 
-        orbit_info = classify_orbit_v2(
-            alt_km=sat_alt,
-            inc_deg=params["inclination_deg"],
-            ecc=params["eccentricity"],
-            perigee_km=params["perigee_km"],
-            apogee_km=params["apogee_km"],
-            period_min=params["period_min"],
-            argp_deg=params["arg_perigee_deg"]
-        )
-
-        min_size_val = float(size_ml["approx_min_size_cm"])
-        max_size_val = float(size_ml["approx_max_size_cm"])
-
-        mass_feats = MassFeatures(
-            rcs=rcs,
-            object_type=object_type,
-            material=material_info["material"],
-            orbit_zone=get_orbit_zone(sat_alt),
-            ecc=params["eccentricity"],
-            inc_deg=params["inclination_deg"],
-            perigee_km=params["perigee_km"],
-            apogee_km=params["apogee_km"],
-            period_min=params["period_min"] if params["period_min"] else 0.0,
-            min_size_cm=min_size_val,
-            max_size_cm=max_size_val
-        )
-        mass_info = mass_engine.estimate_mass(mass_feats)
-
-        char_size_cm = size_ml["char_size_cm"]
-        mass_kg = mass_info.get("mass_kg", 0.0)
-        bc = compute_ballistic_coefficient(char_size_cm, mass_kg, object_type)
-
-        perigee_raw = params.get("perigee_km")
-        apogee_raw = params.get("apogee_km")
-
+        # ORBIT CLASSIFICATION
         try:
-            perigee = float(perigee_raw)
-        except (TypeError, ValueError):
-            perigee = float(sat_alt)
+            orbit_info = classify_orbit_v2(
+                alt_km=sat_alt,
+                inc_deg=params["inclination_deg"],
+                ecc=params["eccentricity"],
+                perigee_km=params["perigee_km"],
+                apogee_km=params["apogee_km"],
+                period_min=params["period_min"],
+                argp_deg=params["arg_perigee_deg"]
+            )
+        except Exception as e:
+            print(f"ERROR: orbit classification failed for {name}:", e)
+            orbit_info = {"orbit": "Unknown", "notes": ""}
 
+        # MASS
         try:
-            apogee = float(apogee_raw)
-        except (TypeError, ValueError):
-            apogee = float(sat_alt)
+            min_size_val = float(size_ml["approx_min_size_cm"])
+            max_size_val = float(size_ml["approx_max_size_cm"])
 
-        mean_alt = 0.5 * (perigee + apogee)
+            mass_feats = MassFeatures(
+                rcs=rcs,
+                object_type=object_type,
+                material=material_info["material"],
+                orbit_zone=get_orbit_zone(sat_alt),
+                ecc=params["eccentricity"],
+                inc_deg=params["inclination_deg"],
+                perigee_km=params["perigee_km"],
+                apogee_km=params["apogee_km"],
+                period_min=params["period_min"] if params["period_min"] else 0.0,
+                min_size_cm=min_size_val,
+                max_size_cm=max_size_val
+            )
+            mass_info = mass_engine.estimate_mass(mass_feats)
+        except Exception as e:
+            print(f"ERROR: mass estimation failed for {name}:", e)
+            mass_info = {"mass_kg": 0.0}
 
-        decay_feats = DecayFeatures(
-            ballistic_coefficient=bc,
-            mean_altitude_km=mean_alt,
-            perigee_km=perigee,
-            apogee_km=apogee
-        )
+        # BALLISTIC COEFFICIENT
+        try:
+            char_size_cm = size_ml["char_size_cm"]
+            mass_kg = mass_info.get("mass_kg", 0.0)
+            bc = compute_ballistic_coefficient(char_size_cm, mass_kg, object_type)
+        except Exception as e:
+            print(f"ERROR: ballistic coefficient failed for {name}:", e)
+            bc = 0.0
 
-        decay_rate = decay_engine_physics.estimate_decay_rate(decay_feats)
+        # DECAY
+        try:
+            perigee_raw = params.get("perigee_km")
+            apogee_raw = params.get("apogee_km")
 
-        obj = {
-            "name": name,
-            "norad_id": norad,
-            "object_id": object_id,
-            "object_type": "DEBRIS",
-            "orbit_classification": orbit_info,
-            "altitude_km": sat_alt,
-            **params,
-            "ballistic_coefficient": bc,
-            "decay_rate_km_per_day": decay_rate,
-            "country": country,
-            "rcs_size": rcs,
-            "size_estimate": size_info,
-            "material_estimate": material_info,
-            "mass_estimate": mass_info
-        }
+            perigee = float(perigee_raw) if perigee_raw else sat_alt
+            apogee = float(apogee_raw) if apogee_raw else sat_alt
 
-        coll_risk = compute_collision_risk(obj)
-        analytic_danger = compute_danger_score(obj, coll_risk)
+            mean_alt = 0.5 * (perigee + apogee)
 
-        danger_feats = DangerFeatures(
-            size_min_cm=min_size_val,
-            size_max_cm=max_size_val,
-            mass_kg=mass_info["mass_kg"],
-            velocity_kms=params["velocity_kms"],
-            eccentricity=params["eccentricity"],
-            inclination_deg=params["inclination_deg"],
-            perigee_km=params["perigee_km"],
-            apogee_km=params["apogee_km"],
-            orbit_zone=get_orbit_zone(sat_alt),
-            collision_risk=coll_risk
-        )
+            decay_feats = DecayFeatures(
+                ballistic_coefficient=bc,
+                mean_altitude_km=mean_alt,
+                perigee_km=perigee,
+                apogee_km=apogee
+            )
+            decay_rate = decay_engine_physics.estimate_decay_rate(decay_feats)
+        except Exception as e:
+            print(f"ERROR: decay estimation failed for {name}:", e)
+            decay_rate = 0.0
 
-        ml_danger = danger_engine.estimate_danger(danger_feats)
-        final_danger = 0.5 * analytic_danger + 0.5 * ml_danger
+        # COLLISION RISK
+        try:
+            obj = {
+                "name": name,
+                "norad_id": norad,
+                "object_id": object_id,
+                "object_type": "DEBRIS",
+                "orbit_classification": orbit_info,
+                "altitude_km": sat_alt,
+                **params,
+                "ballistic_coefficient": bc,
+                "decay_rate_km_per_day": decay_rate,
+                "country": country,
+                "rcs_size": rcs,
+                "size_estimate": size_info,
+                "material_estimate": material_info,
+                "mass_estimate": mass_info
+            }
+
+            coll_risk = compute_collision_risk(obj)
+        except Exception as e:
+            print(f"ERROR: collision risk failed for {name}:", e)
+            coll_risk = 0.0
+
+        # DANGER SCORE
+        try:
+            analytic_danger = compute_danger_score(obj, coll_risk)
+
+            danger_feats = DangerFeatures(
+                size_min_cm=min_size_val,
+                size_max_cm=max_size_val,
+                mass_kg=mass_info["mass_kg"],
+                velocity_kms=params["velocity_kms"],
+                eccentricity=params["eccentricity"],
+                inclination_deg=params["inclination_deg"],
+                perigee_km=params["perigee_km"],
+                apogee_km=params["apogee_km"],
+                orbit_zone=get_orbit_zone(sat_alt),
+                collision_risk=coll_risk
+            )
+
+            ml_danger = danger_engine.estimate_danger(danger_feats)
+            final_danger = 0.5 * analytic_danger + 0.5 * ml_danger
+        except Exception as e:
+            print(f"ERROR: danger score failed for {name}:", e)
+            analytic_danger = 0.0
+            ml_danger = 0.0
+            final_danger = 0.0
 
         obj["collision_risk"] = coll_risk
         obj["danger_score_analytic"] = analytic_danger
@@ -1411,5 +1513,7 @@ def find_debris(lat, lon, min_alt_km, max_alt_km, radius_km):
         obj["danger_score_final"] = final_danger
 
         results.append(obj)
+
+        print ("Engine Ends")
 
     return results
