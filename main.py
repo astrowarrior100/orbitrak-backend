@@ -51,7 +51,7 @@ class ScanRequest(BaseModel):
     radius_km: float
 
 @app.post("/search-debris")
-def scan_debris(request: ScanRequest):
+def search_debris(request: ScanRequest):
     # Your engine requires min_alt_km and max_alt_km
     print ("Scan started")
     min_alt_km = 100
@@ -67,6 +67,10 @@ def scan_debris(request: ScanRequest):
 
     print ("scan completed")
     return {"results": results}
+
+@app.options("/search-debris")
+def options_search_debris():
+    return {}
 
 
 @app.get("/tle/{norad_id}")
