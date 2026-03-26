@@ -1514,6 +1514,8 @@ def find_debris(lat, lon, min_alt_km, max_alt_km, radius_km):
 
         results.append(obj)
 
-        print ("Engine Ends")
+        print ("find debris Ends")
 
     return results
+
+print ("Engine Ends")
