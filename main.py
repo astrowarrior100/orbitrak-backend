@@ -13,20 +13,22 @@ print("LOADED FILE:", os.path.abspath(__file__))
 
 app = FastAPI()
 
-origins = [
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+""" origins = [
     "http://127.0.0.1:5500",
     "http://localhost:5500",
     "https://astrowarrior100.github.io",
     "https://astrowarrior100.github.io/orbitrak-frontend"
 ]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # allow all origins (for development)
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+ """
 
 @app.get("/")
 def health_check():
@@ -35,6 +37,12 @@ def health_check():
 @app.get("/test-cors")
 def test():
     return {"message": "CORS working"}
+
+
+@app.post("/debug-scan")
+def debug_scan(data: dict):
+    print("DEBUG-SCAN HIT:", data)
+    return {"ok": True}
 
 
 class ScanRequest(BaseModel):
